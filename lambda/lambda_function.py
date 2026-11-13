@@ -3,8 +3,11 @@ open-ai-chatbot - AWS Lambda handler (Python 3.12)
 
 Serverless chatbot backend exposed through a Lambda Function URL.
   * POST    -> send `user_prompt` to OpenAI's Responses API and return `ai_reply`
-  * OPTIONS -> CORS preflight (200 + CORS headers)
   * other   -> 405 Method Not Allowed
+
+CORS is configured on the Function URL itself (allow origin *, allow
+methods POST, allow headers content-type). AWS answers the OPTIONS preflight
+and adds the Access-Control-* headers, so this code sets none of them.
 
 Conversation history (last 6 messages per user) is kept in the DynamoDB
 table `chat-history` (PK: user_id [S], SK: timestamp [N]).
@@ -30,13 +33,6 @@ HISTORY_LIMIT = 6
 
 SYSTEM_PROMPT = "You are a helpful, friendly AI assistant. Keep answers concise."
 
-CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
-    "Access-Control-Max-Age": "86400",
-}
-
 # Created once per execution environment (reused across warm invocations)
 table = boto3.resource("dynamodb").Table(TABLE_NAME)
 _client = None
@@ -53,7 +49,7 @@ def get_openai_client():
 def response(status_code, body):
     return {
         "statusCode": status_code,
-        "headers": {"Content-Type": "application/json", **CORS_HEADERS},
+        "headers": {"Content-Type": "application/json"},
         "body": json.dumps(body),
     }
 
@@ -111,10 +107,6 @@ def save_messages(user_id, user_prompt, ai_reply):
 
 def lambda_handler(event, context):
     method = get_method(event)
-
-    # CORS preflight
-    if method == "OPTIONS":
-        return {"statusCode": 200, "headers": CORS_HEADERS, "body": ""}
 
     if method != "POST":
         return response(405, {"error": f"Method {method} not allowed. Use POST."})

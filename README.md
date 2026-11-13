@@ -21,7 +21,7 @@ The UI also measures response times and graphs them.
 Browser (React app on AWS Amplify)
    │  POST {user_prompt, user_id}         ← total request time measured here
    ▼
-Lambda Function URL (auth: NONE, CORS handled in code)
+Lambda Function URL (auth: NONE, CORS configured on the Function URL)
    ▼
 Lambda  open-ai-chatbot  (python3.12, LabRole, layer: openai-python312)
    ├── DynamoDB chat-history  → query the last 6 messages for user_id
@@ -54,12 +54,11 @@ screenshots/                test evidence
 | Method | Behaviour |
 |---|---|
 | `POST` | Body `{"user_prompt": "...", "user_id": "..."}`. Returns `200 {"ai_reply": "...", "openai_response_time_ms": 1234.56}`. |
-| `OPTIONS` | CORS preflight. Returns `200` with CORS headers. |
+| `OPTIONS` | CORS preflight, answered by the Function URL itself (never reaches the code). |
 | anything else | `405 {"error": "Method GET not allowed. Use POST."}` |
 
 - A missing `user_prompt` returns `400`. An OpenAI or DynamoDB failure returns `500` with a JSON error.
-- Every response carries `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: POST, OPTIONS` and `Access-Control-Allow-Headers: Content-Type`.
-- CORS is handled in code, and the Function URL's own CORS setting is left off so headers aren't duplicated.
+- CORS is configured on the Function URL (Allow origin `*`, Allow methods `POST`, Allow headers `content-type`). AWS adds the `Access-Control-*` headers, so the code sets none; setting them in both places duplicates `Access-Control-Allow-Origin` and the browser rejects the response.
 - The console Test event has no `requestContext`, so a missing HTTP method is treated as `POST`. That lets the Task 3 event work as-is.
 - `user_id` is optional and defaults to `"anonymous"`. The web UI sends a random UUID that it keeps in `localStorage`, so every browser gets its own history.
 
@@ -75,7 +74,7 @@ screenshots/                test evidence
 URL=https://kchz5of665zqvvjk3voujswyq40blldm.lambda-url.us-east-1.on.aws/
 curl -X POST "$URL" -H 'Content-Type: application/json' -d '{"user_prompt":"Who are you?"}'   # 200
 curl -i "$URL"                                                                               # 405
-curl -i -X OPTIONS "$URL"                                                                    # 200 + CORS headers
+curl -i -X OPTIONS "$URL" -H 'Origin: https://main.d3jq7crkpzupwr.amplifyapp.com' -H 'Access-Control-Request-Method: POST' -H 'Access-Control-Request-Headers: content-type'   # 200 + CORS headers
 ```
 
 ## DynamoDB table: `chat-history`
